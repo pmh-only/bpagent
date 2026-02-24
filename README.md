@@ -2,6 +2,8 @@
 
 An autonomous AI agent that audits an AWS account against the [AWS Well-Architected Framework](https://aws.amazon.com/architecture/well-architected/) and renders findings in a colour-coded terminal report.
 
+![](./image.png)
+
 ## How it works
 
 1. The agent connects to AWS via the [AWS MCP proxy](https://aws-mcp.us-east-1.api.aws/mcp) using the Model Context Protocol (MCP).
@@ -11,14 +13,14 @@ An autonomous AI agent that audits an AWS account against the [AWS Well-Architec
 
 ### Well-Architected pillars covered
 
-| Pillar | Colour |
-|---|---|
-| Security | Red |
-| Reliability | Blue |
-| Operational Excellence | Green |
+| Pillar                 | Colour  |
+| ---------------------- | ------- |
+| Security               | Red     |
+| Reliability            | Blue    |
+| Operational Excellence | Green   |
 | Performance Efficiency | Magenta |
-| Cost Optimization | Yellow |
-| Sustainability | Cyan |
+| Cost Optimization      | Yellow  |
+| Sustainability         | Cyan    |
 
 ### Severity levels
 
@@ -71,6 +73,7 @@ The terminal report has three sections:
 **2. Findings index** — all findings sorted from CRITICAL to LOW, with colour-coded severity and pillar columns.
 
 **3. Detailed panels** — one panel per finding, border colour matching its severity, containing:
+
 - Description
 - Remediation steps
 - Links to relevant AWS documentation
@@ -85,10 +88,10 @@ uv.lock          # Locked dependency graph
 
 ## Key dependencies
 
-| Package | Purpose |
-|---|---|
-| `strands-agents` | Agent framework with tool-use and structured output |
-| `strands-agents-tools` | Pre-built tools for Strands agents |
-| `boto3` | AWS SDK (used transitively by MCP tools) |
-| `pydantic` | Structured output models |
-| `rich` | Terminal UI rendering |
+| Package                | Purpose                                             |
+| ---------------------- | --------------------------------------------------- |
+| `strands-agents`       | Agent framework with tool-use and structured output |
+| `strands-agents-tools` | Pre-built tools for Strands agents                  |
+| `boto3`                | AWS SDK (used transitively by MCP tools)            |
+| `pydantic`             | Structured output models                            |
+| `rich`                 | Terminal UI rendering                               |

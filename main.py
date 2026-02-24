@@ -40,7 +40,8 @@ When asked to audit an AWS account, autonomously:
      Performance Efficiency · Cost Optimization · Sustainability
 
 For each finding include severity (CRITICAL/HIGH/MEDIUM/LOW), what the issue is,
-and a concrete remediation with links to AWS docs where possible.
+a concrete remediation with links to AWS docs where possible, and the specific
+AWS resources affected (resource type and identifier such as ARN, name, or ID).
 
 End with an executive summary and prioritised action list."""
 
@@ -48,7 +49,6 @@ agent = Agent(
     model=OpenAIModel(model_id=MODEL_ID),
     system_prompt=SYSTEM_PROMPT,
     tools=[aws_mcp],
-    callback_handler=None,
 )
 
 class PillarType(str, Enum):
@@ -70,12 +70,17 @@ class RelatedDocs(BaseModel):
     name: str = Field(description="Name of related document")
     url: str = Field(description="URL of related document")
 
+class AffectedResource(BaseModel):
+    resource_type: str = Field(description="AWS resource type, e.g. 'IAM User', 'S3 Bucket', 'EC2 Instance'")
+    identifier: str = Field(description="Resource identifier such as ARN, name, or ID")
+
 class Findings(BaseModel):
     name: str = Field(description="Name of Best Practice vulnerability")
     description: str = Field(description="One-line brief description of Best Practice vulnerability")
     solution: str = Field(description="Detailed multi-line solution of Best Practice vulnerability")
     pillar_type: PillarType = Field(description="Pillar type of Best Practice vulnerability")
     serverity: Serverity = Field(description="Serverity of Best Practice vulnerability")
+    affected_resources: List[AffectedResource] = Field(description="List of specific AWS resources affected by this finding")
     related_docs: List[RelatedDocs] = Field(description="Related documents of Best Practice vulnerability")
 
 class ExecuteResult(BaseModel):
@@ -177,6 +182,13 @@ def display_findings(result: ExecuteResult) -> None:
         body.append("Solution\n", style="bold underline")
         body.append(f.solution)
         body.append("\n\n")
+        if f.affected_resources:
+            body.append("Affected Resources\n", style="bold underline")
+            for r in f.affected_resources:
+                body.append(f"  • {r.resource_type}: ", style="bold")
+                body.append(r.identifier, style="dim")
+                body.append("\n")
+            body.append("\n")
         body.append("Related Docs\n", style="bold underline")
         for doc in f.related_docs:
             body.append(f"  • {doc.name}: ", style="bold")
