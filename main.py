@@ -13,6 +13,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 from rich.columns import Columns
+from rich.prompt import Prompt
 from rich import box
 
 aws_mcp = MCPClient(
@@ -42,6 +43,8 @@ When asked to audit an AWS account, autonomously:
 For each finding include severity (CRITICAL/HIGH/MEDIUM/LOW), what the issue is,
 a concrete remediation with links to AWS docs where possible, and the specific
 AWS resources affected (resource type and identifier such as ARN, name, or ID).
+
+find 30 items per every request
 
 End with an executive summary and prioritised action list."""
 
@@ -200,8 +203,30 @@ def display_findings(result: ExecuteResult) -> None:
         console.print()
 
 
+console = Console()
+
 result = agent("Run a full AWS best practices audit of this account.", structured_output_model=ExecuteResult)
 if isinstance(result.structured_output, ExecuteResult):
     display_findings(result.structured_output)
 else:
     raise RuntimeError(f"Unexpected output: {result.structured_output}")
+
+console.print()
+console.rule("[dim]Interactive mode — type a request or [bold]exit[/bold] to quit[/dim]")
+
+while True:
+    try:
+        request = Prompt.ask("\n[cyan]>[/cyan]").strip()
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[dim]Exiting.[/dim]")
+        break
+
+    if not request or request.lower() in {"exit", "quit", "q"}:
+        console.print("[dim]Exiting.[/dim]")
+        break
+
+    result = agent(request, structured_output_model=ExecuteResult)
+    if isinstance(result.structured_output, ExecuteResult):
+        display_findings(result.structured_output)
+    else:
+        raise RuntimeError(f"Unexpected output: {result.structured_output}")
