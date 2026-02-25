@@ -41,7 +41,7 @@ When asked to audit an AWS account, autonomously:
      Security · Reliability · Operational Excellence ·
      Performance Efficiency · Cost Optimization · Sustainability
 
-For each finding include severity (CRITICAL/HIGH/MEDIUM/LOW), what the issue is,
+For each finding include severity (CRITICAL/HIGH/MEDIUM/LOW/OPTIONAL), what the issue is,
 a concrete remediation with links to AWS docs where possible, and the specific
 AWS resources affected (resource type and identifier such as ARN, name, or ID).
 
@@ -215,8 +215,8 @@ def write_pdf(findings: List[Findings], path: str) -> None:
     )
 
     SEV_HEX = {
-        'CRITICAL': '#b91c1c', 'HIGH': '#c2410c',
-        'MEDIUM': '#b45309', 'LOW': '#0e7490', 'OPTIONAL': '#6b7280',
+        'CRITICAL': "#ff0000", 'HIGH': "#d46700",
+        'MEDIUM': "#d4d800", 'LOW': '#0e7490', 'OPTIONAL': '#6b7280',
     }
     PIL_HEX = {
         'Security': '#b91c1c', 'Reliability': '#1d4ed8',
@@ -309,12 +309,10 @@ def write_pdf(findings: List[Findings], path: str) -> None:
                  cell('Pillar', **hdr_kw), cell('Finding', **hdr_kw)]]
     for i, f in enumerate(sorted_findings, 1):
         idx_data.append([
-            cell(str(i)),
-            cell(f.serverity.value, fontName='Helvetica-Bold',
-                 textColor=C.HexColor(SEV_HEX[f.serverity.value])),
-            cell(f.pillar_type.value,
-                 textColor=C.HexColor(PIL_HEX.get(f.pillar_type.value, '#374151'))),
-            cell(f.name),
+            str(i),
+            f.serverity.value,
+            f.pillar_type.value,
+            cell(f.name),  # only name column wraps
         ])
     idx_tbl = Table(idx_data, colWidths=idx_col)
     idx_cmds = [
@@ -323,10 +321,15 @@ def write_pdf(findings: List[Findings], path: str) -> None:
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
     ]
-    for i in range(1, len(idx_data)):
-        bg = C.white if i % 2 else C.HexColor('#f9fafb')
-        idx_cmds.append(('BACKGROUND', (0, i), (-1, i), bg))
+    for i, f in enumerate(sorted_findings, 1):
+        row = i
+        bg = C.white if row % 2 else C.HexColor('#f9fafb')
+        idx_cmds.append(('BACKGROUND', (0, row), (-1, row), bg))
+        idx_cmds.append(('TEXTCOLOR', (1, row), (1, row), C.HexColor(SEV_HEX[f.serverity.value])))
+        idx_cmds.append(('FONTNAME', (1, row), (1, row), 'Helvetica-Bold'))
+        idx_cmds.append(('TEXTCOLOR', (2, row), (2, row), C.HexColor(PIL_HEX.get(f.pillar_type.value, '#374151'))))
     idx_tbl.setStyle(TableStyle(idx_cmds))
     story.append(idx_tbl)
     story.append(Spacer(1, 0.5 * cm))
