@@ -4,7 +4,7 @@ from strands import Agent
 from strands.models.openai import OpenAIModel
 from strands.tools.mcp import MCPClient
 from pydantic import BaseModel, Field
-from typing import List
+from typing import Any, List, Optional
 from enum import Enum
 from collections import Counter
 import datetime
@@ -30,7 +30,6 @@ aws_mcp = MCPClient(
     )
 )
 
-MODEL_ID = "gpt-5-mini"
 SYSTEM_PROMPT = """You are an AWS Well-Architected advisor with access to AWS
 documentation and AWS account.
 
@@ -45,12 +44,17 @@ For each finding include severity (CRITICAL/HIGH/MEDIUM/LOW/OPTIONAL), what the 
 a concrete remediation with links to AWS docs where possible, and the specific
 AWS resources affected (resource type and identifier such as ARN, name, or ID).
 
-find 30 items per every request
-
 End with an executive summary and prioritised action list."""
 
+
 agent = Agent(
-    model=OpenAIModel(model_id=MODEL_ID),
+    model=OpenAIModel(
+        model_id="gpt-5.2",
+        params={
+            "reasoning_effort": "none",
+            "parallel_tool_calls": False
+        }
+    ),
     system_prompt=SYSTEM_PROMPT,
     tools=[aws_mcp],
 )
@@ -87,8 +91,22 @@ class Findings(BaseModel):
     affected_resources: List[AffectedResource] = Field(description="List of specific AWS resources affected by this finding")
     related_docs: List[RelatedDocs] = Field(description="Related documents of Best Practice vulnerability")
 
-class ExecuteResult(BaseModel):
-    findings: List[Findings] = Field(description="List of Best Practice vulnerabilities in format.")
+class AgentResponse(BaseModel):
+    message: Optional[str] = Field(
+        None,
+        description=(
+            "Conversational reply to the user — use this when clarifying scope or general answers. "
+            "for example: just say hi, asking which region/pillar/category to audit, or giving a brief status update. "
+            "Leave empty when returning findings."
+        ),
+    )
+    findings: Optional[List[Findings]] = Field(
+        None,
+        description=(
+            "List of Best Practice vulnerabilities found during an audit. "
+            "Leave empty when just conversing with the user."
+        ),
+    )
 
 
 SEVERITY_COLORS = {
@@ -111,9 +129,9 @@ PILLAR_COLORS = {
 SEVERITY_ORDER = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3, 'OPTIONAL': 4}
 
 
-def display_findings(result: ExecuteResult) -> None:
+def display_findings(result: AgentResponse) -> None:
     console = Console()
-    findings = result.findings
+    findings = result.findings or []
     sorted_findings = sorted(findings, key=lambda f: SEVERITY_ORDER.get(f.serverity.value, 99))
 
     console.print()
@@ -305,7 +323,7 @@ def write_pdf(findings: List[Findings], path: str) -> None:
         return Paragraph(text, ParagraphStyle('_c', parent=base, fontSize=8, leading=11, **kw))
 
     hdr_kw = dict(fontName='Helvetica-Bold', textColor=C.white)
-    idx_data = [[cell('#', **hdr_kw), cell('Severity', **hdr_kw),
+    idx_data: List[List[Any]] = [[cell('#', **hdr_kw), cell('Severity', **hdr_kw),
                  cell('Pillar', **hdr_kw), cell('Finding', **hdr_kw)]]
     for i, f in enumerate(sorted_findings, 1):
         idx_data.append([
@@ -424,9 +442,15 @@ while True:
         console.print(f"[green]Saved → {filename}[/green]  ({len(session_findings)} findings)")
         continue
 
-    result = agent(request, structured_output_model=ExecuteResult)
-    if isinstance(result.structured_output, ExecuteResult):
-        session_findings.extend(result.structured_output.findings)
-        display_findings(result.structured_output)
+    with console.status("[cyan]Thinking…[/cyan]", spinner="dots"):
+        result = agent(request, structured_output_model=AgentResponse)
+
+    response = result.structured_output
+    if isinstance(response, AgentResponse):
+        if response.message:
+            console.print(Panel(response.message, border_style="dim", expand=False))
+        if response.findings:
+            session_findings.extend(response.findings)
+            display_findings(response)
     else:
-        raise RuntimeError(f"Unexpected output: {result.structured_output}")
+        raise RuntimeError(f"Unexpected output: {response}")
