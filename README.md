@@ -1,6 +1,6 @@
 # AWS Well-Architected Audit Agent
 
-An autonomous AI agent that audits an AWS account against the [AWS Well-Architected Framework](https://aws.amazon.com/architecture/well-architected/) and renders findings in a colour-coded terminal report.
+An autonomous AI agent that audits an AWS account against the [AWS Well-Architected Framework](https://aws.amazon.com/architecture/well-architected/) and renders findings in a colour-coded terminal report — with interactive follow-up and PDF export.
 
 ![](./image.png)
 
@@ -10,6 +10,7 @@ An autonomous AI agent that audits an AWS account against the [AWS Well-Architec
 2. It autonomously inspects IAM, GuardDuty, CloudTrail, Config, S3, EC2, and other services.
 3. Findings are returned as structured Pydantic objects, organised across the six Well-Architected pillars.
 4. A `rich`-based TUI renders a summary dashboard, findings index, and detailed panels — all colour-coded by severity.
+5. After the initial audit, an interactive prompt lets you request additional checks or export a PDF report.
 
 ### Well-Architected pillars covered
 
@@ -62,13 +63,13 @@ export AWS_REGION="us-east-1"       # region for the MCP proxy
 uv run main.py
 ```
 
-The agent runs autonomously — no interactive input is required. Depending on the number of AWS services and regions, a full audit takes a few minutes.
+The agent runs a full audit autonomously. When it finishes, an interactive prompt appears for follow-up requests.
 
 ## Output
 
-The terminal report has three sections:
+### Terminal report
 
-**1. Summary dashboard** — two tables displayed side by side: findings by severity and findings by pillar.
+**1. Summary dashboard** — two tables side by side: findings by severity and findings by pillar.
 
 **2. Findings index** — all findings sorted from CRITICAL to LOW, with colour-coded severity and pillar columns.
 
@@ -76,22 +77,55 @@ The terminal report has three sections:
 
 - Description
 - Remediation steps
+- **Affected resources** — each resource listed with its type (e.g. `IAM User`, `S3 Bucket`) and identifier (ARN, name, or ID)
 - Links to relevant AWS documentation
+
+### Interactive mode
+
+After the initial audit, a prompt accepts further requests. The agent retains full conversation context across turns, so follow-up checks build on what was already discovered.
+
+```
+> audit my Lambda function permissions
+> check RDS encryption settings
+> pdf                          # export all findings to a timestamped PDF
+> pdf q1-audit                 # export to q1-audit.pdf
+> exit
+```
+
+Commands:
+
+| Input | Action |
+| --- | --- |
+| Any natural-language request | Runs an additional check and displays new findings |
+| `pdf` | Saves all session findings to `aws_audit_<timestamp>.pdf` |
+| `pdf <filename>` | Saves to the specified file (`.pdf` appended if omitted) |
+| `exit` / `quit` / `q` | Exits the program |
+
+### PDF report
+
+The exported PDF mirrors the terminal report and contains:
+
+1. **Title page** — report title and generation timestamp
+2. **Summary** — findings by severity and by pillar
+3. **Findings index** — full sortable table with colour-coded severity and pillar
+4. **Detailed findings** — one section per finding with Description, Solution, Affected Resources, and clickable Related Docs links
+
+The PDF covers **all findings accumulated across the full session**, not just the last response.
 
 ## Project structure
 
 ```
-main.py          # Agent definition, data models, and TUI display
+main.py          # Agent definition, data models, TUI display, and PDF export
 pyproject.toml   # Project metadata and dependencies
 uv.lock          # Locked dependency graph
 ```
 
 ## Key dependencies
 
-| Package                | Purpose                                             |
-| ---------------------- | --------------------------------------------------- |
-| `strands-agents`       | Agent framework with tool-use and structured output |
-| `strands-agents-tools` | Pre-built tools for Strands agents                  |
-| `boto3`                | AWS SDK (used transitively by MCP tools)            |
-| `pydantic`             | Structured output models                            |
-| `rich`                 | Terminal UI rendering                               |
+| Package          | Purpose                                             |
+| ---------------- | --------------------------------------------------- |
+| `strands-agents` | Agent framework with tool-use and structured output |
+| `boto3`          | AWS SDK (used transitively by MCP tools)            |
+| `pydantic`       | Structured output models                            |
+| `rich`           | Terminal UI rendering                               |
+| `reportlab`      | PDF report generation                               |

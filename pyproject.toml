@@ -9,4 +9,5 @@ dependencies = [
     "pydantic>=2.12.5",
     "strands-agents[openai]>=1.27.0",
     "rich>=13.0.0",
+    "reportlab>=4.0.0",
 ]

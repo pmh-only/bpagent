@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import List
 from enum import Enum
 from collections import Counter
+import datetime
 
 from rich.console import Console
 from rich.table import Table
@@ -203,16 +204,198 @@ def display_findings(result: ExecuteResult) -> None:
         console.print()
 
 
-console = Console()
+def write_pdf(findings: List[Findings], path: str) -> None:
+    from reportlab.lib import colors as C
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        HRFlowable, KeepTogether,
+    )
 
-result = agent("Run a full AWS best practices audit of this account.", structured_output_model=ExecuteResult)
-if isinstance(result.structured_output, ExecuteResult):
-    display_findings(result.structured_output)
-else:
-    raise RuntimeError(f"Unexpected output: {result.structured_output}")
+    SEV_HEX = {
+        'CRITICAL': '#b91c1c', 'HIGH': '#c2410c',
+        'MEDIUM': '#b45309', 'LOW': '#0e7490', 'OPTIONAL': '#6b7280',
+    }
+    PIL_HEX = {
+        'Security': '#b91c1c', 'Reliability': '#1d4ed8',
+        'Operational Excellence': '#15803d', 'Performance Efficiency': '#7e22ce',
+        'Cost Optimization': '#a16207', 'Sustainability': '#0e7490',
+    }
+
+    sorted_findings = sorted(findings, key=lambda f: SEVERITY_ORDER.get(f.serverity.value, 99))
+    sev_counts = Counter(f.serverity.value for f in findings)
+    pillar_counts = Counter(f.pillar_type.value for f in findings)
+
+    PW, _ = A4
+    LM = RM = 2 * cm
+    W = PW - LM - RM
+    base = getSampleStyleSheet()['Normal']
+
+    def sty(name, **kw):
+        return ParagraphStyle(name, parent=base, **kw)
+
+    title_s  = sty('rpt_title', fontSize=20, leading=26, spaceAfter=4,
+                   textColor=C.HexColor('#0a2540'), fontName='Helvetica-Bold')
+    date_s   = sty('rpt_date', fontSize=9, textColor=C.HexColor('#6b7280'), spaceAfter=14)
+    h2_s     = sty('rpt_h2', fontSize=12, leading=16, spaceBefore=14, spaceAfter=6,
+                   textColor=C.HexColor('#0a2540'), fontName='Helvetica-Bold')
+    label_s  = sty('rpt_label', fontSize=9, fontName='Helvetica-Bold', spaceBefore=6, spaceAfter=2)
+    body_s   = sty('rpt_body', fontSize=9, leading=13)
+    indent_s = sty('rpt_indent', fontSize=9, leading=13, leftIndent=12)
+    small_s  = sty('rpt_small', fontSize=8, leading=11, leftIndent=12)
+    fh_s     = sty('rpt_fh', fontSize=10, fontName='Helvetica-Bold', textColor=C.HexColor('#0a2540'))
+    badge_s  = sty('rpt_badge', fontSize=8, fontName='Helvetica-Bold')
+    pil_s    = sty('rpt_pil', fontSize=8)
+
+    doc = SimpleDocTemplate(
+        path, pagesize=A4,
+        leftMargin=LM, rightMargin=RM,
+        topMargin=2.5 * cm, bottomMargin=2 * cm,
+    )
+    story = []
+
+    # Title
+    story += [
+        Paragraph("AWS Well-Architected Audit Report", title_s),
+        Paragraph(datetime.datetime.now().strftime("Generated %B %d, %Y at %H:%M"), date_s),
+        HRFlowable(width='100%', thickness=2, color=C.HexColor('#0066cc'), spaceAfter=16),
+    ]
+
+    # Summary
+    story.append(Paragraph("Summary", h2_s))
+
+    def scell(text, **kw):
+        return Paragraph(text, ParagraphStyle('_s', parent=base, fontSize=9, leading=12, **kw))
+
+    shdr = dict(fontName='Helvetica-Bold', textColor=C.white)
+    sev_data = [[scell('Severity', **shdr), scell('Count', **shdr)]]
+    for sev in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'OPTIONAL']:
+        if sev_counts.get(sev, 0):
+            sev_data.append([scell(sev), scell(str(sev_counts[sev]))])
+
+    pil_data = [[scell('Pillar', **shdr), scell('Count', **shdr)]]
+    for pillar, cnt in sorted(pillar_counts.items(), key=lambda x: -x[1]):
+        pil_data.append([scell(pillar), scell(str(cnt))])
+
+    def summary_tbl(rows, col_widths):
+        tbl = Table(rows, colWidths=col_widths)
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), C.HexColor('#0a2540')),
+            ('GRID', (0, 0), (-1, -1), 0.5, C.HexColor('#e5e7eb')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        return tbl
+
+    sev_tbl = summary_tbl(sev_data, [5.5 * cm, 1.5 * cm])
+    pil_tbl = summary_tbl(pil_data, [6.5 * cm, 1.5 * cm])
+    pair = Table([[sev_tbl, '', pil_tbl]], colWidths=[7 * cm, 0.5 * cm, W - 7.5 * cm])
+    pair.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP')]))
+    story.append(pair)
+    story.append(Spacer(1, 0.4 * cm))
+
+    # Findings index
+    story.append(Paragraph(f"Findings Index  ({len(findings)} total)", h2_s))
+    idx_col = [0.7 * cm, 2.4 * cm, 4.0 * cm, W - 7.1 * cm]
+
+    def cell(text, **kw):
+        return Paragraph(text, ParagraphStyle('_c', parent=base, fontSize=8, leading=11, **kw))
+
+    hdr_kw = dict(fontName='Helvetica-Bold', textColor=C.white)
+    idx_data = [[cell('#', **hdr_kw), cell('Severity', **hdr_kw),
+                 cell('Pillar', **hdr_kw), cell('Finding', **hdr_kw)]]
+    for i, f in enumerate(sorted_findings, 1):
+        idx_data.append([
+            cell(str(i)),
+            cell(f.serverity.value, fontName='Helvetica-Bold',
+                 textColor=C.HexColor(SEV_HEX[f.serverity.value])),
+            cell(f.pillar_type.value,
+                 textColor=C.HexColor(PIL_HEX.get(f.pillar_type.value, '#374151'))),
+            cell(f.name),
+        ])
+    idx_tbl = Table(idx_data, colWidths=idx_col)
+    idx_cmds = [
+        ('BACKGROUND', (0, 0), (-1, 0), C.HexColor('#0a2540')),
+        ('GRID', (0, 0), (-1, -1), 0.5, C.HexColor('#e5e7eb')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]
+    for i in range(1, len(idx_data)):
+        bg = C.white if i % 2 else C.HexColor('#f9fafb')
+        idx_cmds.append(('BACKGROUND', (0, i), (-1, i), bg))
+    idx_tbl.setStyle(TableStyle(idx_cmds))
+    story.append(idx_tbl)
+    story.append(Spacer(1, 0.5 * cm))
+
+    # Detailed findings
+    story += [
+        HRFlowable(width='100%', thickness=1, color=C.HexColor('#e5e7eb'), spaceAfter=4),
+        Paragraph("Detailed Findings", h2_s),
+    ]
+
+    for i, f in enumerate(sorted_findings, 1):
+        sev_c = C.HexColor(SEV_HEX[f.serverity.value])
+        pil_c = C.HexColor(PIL_HEX.get(f.pillar_type.value, '#374151'))
+
+        hdr = Table([[
+            Paragraph(f'[{i}]  {f.name}', fh_s),
+            Paragraph(f.serverity.value, badge_s),
+            Paragraph(f.pillar_type.value, pil_s),
+        ]], colWidths=[W * 0.6, W * 0.15, W * 0.25])
+        hdr.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), C.HexColor('#f0f4f8')),
+            ('TEXTCOLOR', (1, 0), (1, 0), sev_c),
+            ('TEXTCOLOR', (2, 0), (2, 0), pil_c),
+            ('FONTNAME', (1, 0), (1, 0), 'Helvetica-Bold'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LINEBELOW', (0, 0), (-1, -1), 2, sev_c),
+        ]))
+
+        blocks = [
+            hdr,
+            Paragraph('Description', label_s),
+            Paragraph(f.description, body_s),
+            Paragraph('Solution', label_s),
+            Paragraph(f.solution, body_s),
+        ]
+        if f.affected_resources:
+            blocks.append(Paragraph('Affected Resources', label_s))
+            for r in f.affected_resources:
+                blocks.append(Paragraph(
+                    f'<b>{r.resource_type}:</b>  {r.identifier}', indent_s
+                ))
+        if f.related_docs:
+            blocks.append(Paragraph('Related Docs', label_s))
+            for d in f.related_docs:
+                blocks.append(Paragraph(
+                    f'• <b>{d.name}:</b>  '
+                    f'<a href="{d.url}"><font color="#0066cc">{d.url}</font></a>',
+                    small_s
+                ))
+        blocks.append(Spacer(1, 0.4 * cm))
+
+        story.append(KeepTogether(blocks[:4]))  # keep header + description together
+        for b in blocks[4:]:
+            story.append(b)
+
+    doc.build(story)
+
+
+console = Console()
+session_findings: List[Findings] = []
 
 console.print()
-console.rule("[dim]Interactive mode — type a request or [bold]exit[/bold] to quit[/dim]")
+console.rule(
+    "[dim]Interactive mode  •  "
+    "[bold]pdf[/bold] [filename]  to export  •  [bold]exit[/bold] to quit[/dim]"
+)
 
 while True:
     try:
@@ -225,8 +408,22 @@ while True:
         console.print("[dim]Exiting.[/dim]")
         break
 
+    if request.lower().startswith("pdf"):
+        parts = request.split(maxsplit=1)
+        filename = (
+            parts[1] if len(parts) > 1
+            else f"aws_audit_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        )
+        if not filename.endswith(".pdf"):
+            filename += ".pdf"
+        with console.status(f"[cyan]Writing {filename}…[/cyan]"):
+            write_pdf(session_findings, filename)
+        console.print(f"[green]Saved → {filename}[/green]  ({len(session_findings)} findings)")
+        continue
+
     result = agent(request, structured_output_model=ExecuteResult)
     if isinstance(result.structured_output, ExecuteResult):
+        session_findings.extend(result.structured_output.findings)
         display_findings(result.structured_output)
     else:
         raise RuntimeError(f"Unexpected output: {result.structured_output}")
