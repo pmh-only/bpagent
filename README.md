@@ -4,6 +4,8 @@ An autonomous AI agent that audits an AWS account against the [AWS Well-Architec
 
 ![](./image.png)
 
+### **[CLICK HERE](./demo.pdf) to see generated audit report PDF**
+
 ## How it works
 
 1. The agent connects to AWS via the [AWS MCP proxy](https://aws-mcp.us-east-1.api.aws/mcp) using the Model Context Protocol (MCP).
@@ -94,12 +96,12 @@ After the initial audit, a prompt accepts further requests. The agent retains fu
 
 Commands:
 
-| Input | Action |
-| --- | --- |
-| Any natural-language request | Runs an additional check and displays new findings |
-| `pdf` | Saves all session findings to `aws_audit_<timestamp>.pdf` |
-| `pdf <filename>` | Saves to the specified file (`.pdf` appended if omitted) |
-| `exit` / `quit` / `q` | Exits the program |
+| Input                        | Action                                                    |
+| ---------------------------- | --------------------------------------------------------- |
+| Any natural-language request | Runs an additional check and displays new findings        |
+| `pdf`                        | Saves all session findings to `aws_audit_<timestamp>.pdf` |
+| `pdf <filename>`             | Saves to the specified file (`.pdf` appended if omitted)  |
+| `exit` / `quit` / `q`        | Exits the program                                         |
 
 ### PDF report
 

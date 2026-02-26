@@ -11,3 +11,4 @@ wheels/
 
 # PDF report outputs
 /*.pdf
+!/demo.pdf
